@@ -1,0 +1,5 @@
+mkdir -p $PREFIX/share/quickbms
+cp /data/data/com.termux/files/home/boris_tool/bms/* $PREFIX/share/quickbms/
+cd $PREFIX/share/quickbms/
+chmod +x quickbms
+chmod +x quickbms_4gb_files
