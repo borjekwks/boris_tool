@@ -1,0 +1,153 @@
+#!/bin/bash
+
+set -e  # Завершить выполнение скрипта при ошибках
+
+# --- Настройки ---
+bms_script_unpack="./unpack.bms"  # Путь к скрипту для распаковки
+bms_script_repack="./repack.bms"  # Путь к скрипту для упаковки
+obb_dir="./OBB/"                  # Директория для OBB файлов
+pak_dir="./PAK/"                  # Директория для PAK файлов
+temp_dir="./obb_temp"             # Директория для временных файлов
+rename_map_file="rename_map.txt"  # Имя файла соответствия для упаковки
+
+# --- Поиск QuickBMS ---
+find_quickbms() {
+  if [[ -f ./quickbms.exe ]]; then
+    echo "QuickBMS найден: ./quickbms.exe"
+    quickbms_command="./quickbms.exe"
+  else
+    echo "Ошибка: QuickBMS не найден!" >&2
+    exit 1
+  fi
+}
+
+# --- Проверка и создание директорий ---
+check_and_create_dir() {
+  local dir="$1"
+  if ! [[ -d "$dir" ]]; then
+    mkdir -p "$dir" || { echo "Ошибка: Не удалось создать директорию '$dir'! Проверьте права доступа." >&2; exit 1; }
+  fi
+}
+
+# --- Проверка существования файла ---
+check_file_exists() {
+  local file="$1"
+  if [[ ! -f "$file" ]]; then
+    echo "Ошибка: Файл '$file' не найден!" >&2
+    exit 1
+  fi
+}
+
+# --- Запуск QuickBMS ---
+run_quickbms() {
+  local script="$1"
+  local input="$2"
+  local output="$3"
+  
+  check_file_exists "$script"    # Проверка существования скрипта
+  check_file_exists "$input"      # Проверка существования входного файла
+
+  echo "Запуск QuickBMS: $quickbms_command \"$script\" \"$input\" \"$output\""
+  "$quickbms_command" "$script" "$input" "$output" || { echo "Ошибка при выполнении QuickBMS! Код возврата: $?" >&2; exit 1; }
+}
+
+# --- Поиск файлов с заданным расширением ---
+find_files() {
+  local dir="$1"
+  local ext="$2"
+  local files=($(find "$dir" -maxdepth 1 -type f -name "*.$ext" 2>/dev/null))
+  if [[ ${#files[@]} -eq 0 ]]; then
+    echo "Ошибка: Файлы с расширением '$ext' не найдены в '$dir'!" >&2
+    exit 1
+  fi
+  echo "${files[@]}"
+}
+
+# --- Выбор файла из списка ---
+select_file() {
+  local files=("$@")
+  PS3="Выберите файл: "
+  select file in "${files[@]}"; do
+    if [[ "$REPLY" -gt 0 && "$REPLY" -le ${#files[@]} ]]; then
+      echo "${files[$REPLY - 1]}"
+      return 0
+    fi
+    echo "Неверный выбор."
+  done
+}
+
+# --- Распаковка/упаковка файла ---
+process_file() {
+  local action="$1"
+  local file_type="$2"
+  local input_file="$3"
+  local output_dir="$4"
+
+  check_and_create_dir "$temp_dir"   # Создаем временную директорию
+  check_and_create_dir "$output_dir"  # Создаем директорию для результата
+
+  local script
+  if [[ "$action" == "unpack" ]]; then
+    script="$bms_script_unpack"  # Скрипт для распаковки
+  elif [[ "$action" == "repack" ]]; then
+    script="$bms_script_repack"  # Скрипт для упаковки
+    check_file_exists "$output_dir/$rename_map_file"  # Проверяем наличие rename_map.txt при упаковке
+  else
+    echo "Ошибка: Неизвестное действие '$action'!" >&2
+    exit 1
+  fi
+
+  run_quickbms "$script" "$input_file" "$temp_dir"  # Запускаем процесс
+  echo "Обработка завершена. Организация файлов..."
+  organize_files "$temp_dir" "$output_dir" "$file_type"  # Организуем файлы
+  rm -rf "$temp_dir"  # Удаляем временную директорию
+}
+
+# --- Организация файлов ---
+organize_files() {
+  local source_dir="$1"
+  local dest_dir="$2"
+
+  cp -r "$source_dir"/* "$dest_dir"  # Копируем распакованные файлы в выходную директорию
+  echo "Файлы организованы в '$dest_dir'"
+}
+
+# --- Меню ---
+show_menu() {
+  clear
+  echo "Меню работы с OBB и PAK файлами"
+  echo "-------------------------------"
+  echo "1. Распаковать OBB файл"
+  echo "2. Упаковать PAK файл"
+  echo "3. Выход"
+  read -p "Выберите пункт меню: " choice
+}
+
+# --- Основная часть скрипта ---
+main() {
+  find_quickbms  # Поиск QuickBMS
+  check_and_create_dir "$obb_dir"
+  check_and_create_dir "$pak_dir"
+
+  while true; do
+    show_menu
+    case "$choice" in
+      1) 
+        local obb_file
+        obb_file=$(select_file "$(find_files "$obb_dir" "obb")")
+        process_file "unpack" "obb" "$obb_file" "$pak_dir";;
+      2) 
+        local pak_file
+        pak_file=$(select_file "$(find_files "$pak_dir" "pak")")
+        process_file "repack" "pak" "$pak_file" "$obb_dir";;
+      3) 
+        echo "Выход из программы."
+        exit 0;;
+      *) 
+        echo "Ошибка: Неверный выбор. Пожалуйста, попробуйте снова." >&2;;
+    esac
+  done
+}
+
+# Запуск основной функции
+main
