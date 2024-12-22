@@ -7,31 +7,42 @@ NOCOLOR="\033[0m"
 echo -e "executing: ${LIGHTGREEN}          BORIS TOOL ${NOCOLOR}"
 echo "----------------------------"
 
+# Настройка прав доступа для файлов .bms
 chmod +x etc/*.bms
 
-# Проверка наличия директории BORIS_TOOL, если нет - создание
-if [[ ! -d "/sdcard/Download/BORIS_TOOL" ]]; then
-  mkdir -p /sdcard/Download/BORIS_TOOL
+# Проверка и создание директории BORIS_TOOL
+boris_tool_dir="/sdcard/Download/BORIS_TOOL"
+if [[ ! -d "$boris_tool_dir" ]]; then
+  mkdir -p "$boris_tool_dir" || { echo "Failed to create directory $boris_tool_dir"; exit 1; }
 fi
 
 pak_folder="/data/data/com.termux/files/home/PakTool/pak_folder"
 output_folder="/data/data/com.termux/files/home/OBB_UNPACK/output"
 
 # Проверка наличия необходимых программ
-command -v qemu-i386 >/dev/null 2>&1 || { echo >&2 "qemu-i386 is required but it's not installed. Aborting."; exit 1; }
-command -v quickbms_4gb_files >/dev/null 2>&1 || { echo >&2 "quickbms is required but it's not installed. Aborting."; exit 1; }
+for cmd in qemu-i386 quickbms_4gb_files; do
+  command -v "$cmd" >/dev/null 2>&1 || { 
+    echo >&2 "$cmd is required but it's not installed. Please install it before running the script. Aborting."; 
+    exit 1; 
+  }
+}
 
 unpacking () {
-  qemu-i386 $PREFIX/share/quickbms/quickbms_4gb_files etc/*.bms "$pak_folder/$(basename "$selected_file")" "$output_folder"
+  qemu-i386 "$PREFIX/share/quickbms/quickbms_4gb_files" etc/*.bms "$pak_folder/$(basename "$selected_file")" "$output_folder"
 }
 
 repacking () {
-  qemu-i386 $PREFIX/share/quickbms/quickbms_4gb_files -w -r etc/*.bms "$selected_file" /sdcard/Download/file_for_repack
+  qemu-i386 "$PREFIX/share/quickbms/quickbms_4gb_files" -w -r etc/*.bms "$selected_file" /sdcard/Download/file_for_repack
 }
 
 function unpack {
   prompt="Please select a file to unpack:"
-  options=($(find /sdcard/Download/BORIS_TOOL -name "*.pak" -o -name "*.obb"))
+  options=($(find "$boris_tool_dir" -name "*.pak" -o -name "*.obb" 2>/dev/null))
+  
+  if [[ ${#options[@]} -eq 0 ]]; then
+    echo "No .pak or .obb files found in $boris_tool_dir."
+    return
+  fi
 
   PS3="$prompt "
   select opt in "${options[@]}" "Quit"; do 
@@ -43,8 +54,8 @@ function unpack {
       selected_file="${options[$REPLY-1]}"
       echo "You picked $selected_file which is file $REPLY"
 
-      mkdir -p "$pak_folder"
-      cp "$selected_file" "$pak_folder/"
+      mkdir -p "$pak_folder" || { echo "Failed to create directory $pak_folder"; exit 1; }
+      cp "$selected_file" "$pak_folder/" || { echo "Failed to copy $selected_file to $pak_folder"; exit 1; }
       
       unpacking
       
@@ -65,7 +76,12 @@ function unpack {
 
 function repack {
   prompt="Please select a file to repack:"
-  options=($(find /sdcard/Download/BORIS_TOOL -name "*.pak" -o -name "*.obb"))
+  options=($(find "$boris_tool_dir" -name "*.pak" -o -name "*.obb" 2>/dev/null))
+
+  if [[ ${#options[@]} -eq 0 ]]; then
+    echo "No .pak or .obb files found in $boris_tool_dir."
+    return
+  fi
 
   PS3="$prompt "
   select opt in "${options[@]}" "Quit"; do 
@@ -108,6 +124,6 @@ do
     "Quit")
       break
       ;;
-    *) echo "invalid option $REPLY";;
+    *) echo "Invalid option $REPLY";;
   esac
 done
